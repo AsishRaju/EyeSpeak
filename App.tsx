@@ -1,118 +1,210 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useState} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
+  NativeBaseProvider,
+  Button,
+  Box,
+  Image,
   Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+  Pressable,
+} from 'native-base';
+import {Alert, StyleSheet, ToastAndroid, View} from 'react-native';
+import GradientText from './components/GradientText';
+import {Asset, launchImageLibrary} from 'react-native-image-picker';
+import UserForm from './components/UserForm';
+import RNFS from 'react-native-fs';
+import {Carousel} from 'react-native-basic-carousel';
+import Clipboard from '@react-native-clipboard/clipboard';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const DEFAULT_IMAGE_URL =
+  'https://repository-images.githubusercontent.com/229240000/2b1bba00-eae1-11ea-8b31-ea57fe8a3f95';
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+export default function App() {
+  const [photo, setPhoto] = useState<Asset | undefined>(undefined);
+  const [image, setImage] = useState(DEFAULT_IMAGE_URL);
+  const [loading, setLoading] = useState(false);
+  const [captions, setCaptions] = useState([]);
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+  const getMetadata = async (metadata: Object) => {
+    try {
+      console.log({metadata});
+      setLoading(true);
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+      var data = await RNFS.readFile(image, 'base64');
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+      const formdata = new FormData();
+      formdata.append('image', data);
+
+      const requestOptions = {
+        method: 'POST',
+        body: formdata,
+      };
+
+      const imageURl = await (
+        await fetch(
+          'https://api.imgbb.com/1/upload?key=73594faa050b96f8586fd85613dbde5e',
+          requestOptions,
+        )
+      )
+        .json()
+        .catch((error: any) => {
+          console.log({error2: error});
+        });
+
+      const rawData = JSON.stringify({
+        imageURL: imageURl.data.url,
+        tags: metadata?.mood,
+        context: metadata?.additinalInfo,
+        lang: 'English',
+        length: metadata?.length,
+      });
+
+      console.log('hello', {rawData});
+
+      const myHeaders = new Headers();
+      myHeaders.append('Content-Type', 'application/json');
+
+      const requestOptions2 = {
+        method: 'POST',
+        headers: myHeaders,
+        body: rawData,
+      };
+
+      const captionData = await (
+        await fetch(
+          'https://felix.link/apps/captions/api/caption',
+          requestOptions2,
+        )
+      ).json();
+
+      setCaptions(captionData.captions);
+
+      console.log(imageURl.data.url, captionData.captions);
+
+      setLoading(false);
+    } catch (error) {
+      console.log({error3: JSON.stringify(error)});
+    }
+  };
+
+  const ImagePicker = () => {
+    let options: any = {
+      storageOptions: {
+        path: 'image',
+      },
+    };
+
+    launchImageLibrary(options, response => {
+      setImage(response?.assets?.[0]?.uri ?? DEFAULT_IMAGE_URL);
+      setPhoto(response?.assets?.[0] ?? undefined);
+    });
   };
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <NativeBaseProvider>
+      <GradientText style={styles.title}>EyeSpeak</GradientText>
+      <Image
+        alt="uploaded image"
+        mx={'auto'}
+        source={{
+          uri: image,
+        }}
+        size="xl"
+        style={styles.imageStyle}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+      {captions.length === 0 && (
+        <Button
+          margin={'5'}
+          _text={{fontSize: 'md', fontWeight: 'bold', color: 'black'}}
+          background={'green.400'}
+          _pressed={{backgroundColor: 'green.500'}}
+          size={'lg'}
+          onPress={ImagePicker}>
+          Pick Image
+        </Button>
+      )}
+      {captions.length === 0 && image !== DEFAULT_IMAGE_URL && (
+        <Box alignItems="center">
+          <UserForm setData={getMetadata} loading={loading} />
+        </Box>
+      )}
+      <Box alignItems="center" marginTop={'4'}>
+        <Carousel
+          data={captions}
+          renderItem={({item, index}) => (
+            <Box>
+              <Pressable
+                maxW="96"
+                onPress={() => {
+                  Clipboard.setString(item);
+                  ToastAndroid.show('copied', ToastAndroid.SHORT);
+                }}>
+                {({isHovered, isFocused, isPressed}) => {
+                  return (
+                    <Box
+                      bg={
+                        isPressed
+                          ? 'coolGray.200'
+                          : isHovered
+                          ? 'coolGray.200'
+                          : 'coolGray.100'
+                      }
+                      style={{
+                        transform: [
+                          {
+                            scale: isPressed ? 0.96 : 1,
+                          },
+                        ],
+                      }}
+                      p="5"
+                      rounded="8"
+                      shadow={3}
+                      borderWidth="1"
+                      borderColor="green.600">
+                      {
+                        <Text fontSize={'md'} fontWeight={'semibold'}>
+                          {item}
+                        </Text>
+                      }
+                    </Box>
+                  );
+                }}
+              </Pressable>
+            </Box>
+          )}
+          itemWidth={300}
+          onSnapToItem={item => console.log(item)}
+          pagination
+        />
+        {captions.length !== 0 && image !== DEFAULT_IMAGE_URL && (
+          <Button
+            margin={'5'}
+            width={'150px'}
+            _text={{fontSize: 'md', fontWeight: 'bold', color: 'white'}}
+            background={'red.400'}
+            _pressed={{backgroundColor: 'red.500'}}
+            size={'lg'}
+            onPress={() => {
+              setCaptions([]);
+              setImage(image);
+            }}>
+            Retry
+          </Button>
+        )}
+      </Box>
+    </NativeBaseProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  title: {
+    margin: '1%',
+    textAlign: 'center',
+    fontSize: 40,
+    fontWeight: 'bold',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
+  imageStyle: {
+    width: '90%',
+    height: '30%',
+    resizeMode: 'cover',
   },
 });
-
-export default App;
